@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: slack bot app
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+  # Incoming Slack -> SQS.
+  InboundMessagesReceiver:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./deliverable.zip
+      Handler: inbound_receiver.lambda_handler
+      Runtime: python3.6
+      Environment:
+        Variables:
+          QUEUE_URL: { Ref: IncomingQueue }
+          SLACK_SECRET: { Ref: SlackSecret }
+      Events:
+        SlackIncomingAPI:
+          Type: Api
+          Properties:
+            Path: /inbound
+            Method: post
+      Policies:
+        - AmazonSQSFullAccess
+
+  InboundQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: slack-bot-inbound
+
+  # Main handler processing SQS.
+  InboundMessageHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./deliverable.zip
+      Handler: inbound_handler.lambda_handler
+      Runtime: python3.6
+      Environment:
+        Variables:
+          SLACK_TOKEN: { Ref: SlackToken }
+      Events:
+        SlackIncomingMessages:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt: [IncomingQueue, Arn]
+
+  OutgoingTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: bot-outgoing
+
+  OutgoingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./deliverable.zip
+      Handler: outbound.lambda_handler
+      Runtime: python3.6
+      Events:
+        BotNofications:
+          Type: SNS
+          Properties:
+            Topic: { Ref: OutgoingTopic }
+
+Parameters:
+  SlackSecret:
+    Type: String
+    Description: "Slack Secret to receive incoming webhooks"
+  SlackToken:
+    Type: String
+    Description: "Token to use Slack API"
+
+Outputs:
